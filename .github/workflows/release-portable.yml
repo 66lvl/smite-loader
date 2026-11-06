@@ -24,6 +24,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Could not download the original private package.' }
           if ((Get-FileHash -Algorithm SHA256 SmiteLoader-package.zip).Hash -ne '09418cc474350c3762ef697f66fc9e4c9be0a4c251fa412fb7e46278a593c6ba') { throw 'Original package hash mismatch.' }
           Copy-Item SmiteLoader-package.zip SmiteLoader-source.zip
+          Add-Type -AssemblyName System.IO.Compression
           Add-Type -AssemblyName System.IO.Compression.FileSystem
           $zip = [IO.Compression.ZipFile]::Open((Join-Path $pwd 'SmiteLoader-source.zip'), [IO.Compression.ZipArchiveMode]::Update)
           function ReadEntry([string]$name) {
