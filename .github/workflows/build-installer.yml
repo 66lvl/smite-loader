@@ -26,3 +26,18 @@ jobs:
           path: SmiteSetup.exe
           if-no-files-found: error
           retention-days: 14
+  verify:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test installation without the game
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          @('n', '') | & powershell.exe -NoProfile -ExecutionPolicy Bypass -File Install.ps1
+          $installed = Join-Path $env:LOCALAPPDATA 'SmiteLoader\dist'
+          if (!(Test-Path (Join-Path $installed 'SmiteLoader.exe'))) { throw 'Loader EXE was not installed.' }
+          if (!(Test-Path (Join-Path $installed 'Smite_Internal_1641548.dll'))) { throw 'Trainer DLL was not built.' }
+          Write-Host 'Installation and local build passed; game injection was not tested.'
