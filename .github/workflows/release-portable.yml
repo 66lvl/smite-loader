@@ -99,7 +99,7 @@ jobs:
           $output = Join-Path $env:RUNNER_TEMP 'smite-portable-test\Desktop\SmiteLoader'
           $package = Join-Path $pwd 'SmiteLoader-source.zip'
           $hash = [IO.File]::ReadAllText((Join-Path $pwd 'source-sha256.txt')).Trim()
-          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File portable\PortableBootstrap.ps1 -ProjectRoot $project -OutputDir $output -PackageUrl 'unused' -ExpectedHash $hash -TestArchivePath $package -CiMode
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File loaderbuild\PortableBootstrap.ps1 -ProjectRoot $project -OutputDir $output -PackageUrl 'unused' -ExpectedHash $hash -TestArchivePath $package -CiMode
           if ($LASTEXITCODE -ne 0) { throw "First-run test failed: $LASTEXITCODE" }
           if (-not (Test-Path (Join-Path $output 'Dumper-7.dll'))) { throw 'Dumper DLL not copied to loader directory.' }
           if (-not (Get-ChildItem -LiteralPath $output -Filter 'Smite_Internal_*.dll')) { throw 'Trainer DLL not built in loader directory.' }
