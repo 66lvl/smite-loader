@@ -15,8 +15,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference = 'Stop'
+          $ErrorActionPreference = 'Continue'
           gh release view v2.0.0 --repo 66lvl/smite-loader 2>$null
-          if ($LASTEXITCODE -eq 0) { throw 'v2.0.0 already exists; refusing to overwrite the release.' }
+          $releaseExists = $LASTEXITCODE -eq 0
+          $ErrorActionPreference = 'Stop'
+          if ($releaseExists) { throw 'v2.0.0 already exists; refusing to overwrite the release.' }
           gh release download v1.0.0 --repo 66lvl/smite-loader --pattern SmiteLoader-package.zip --dir .
           if ($LASTEXITCODE -ne 0) { throw 'Could not download the original private package.' }
           if ((Get-FileHash -Algorithm SHA256 SmiteLoader-package.zip).Hash -ne '09418cc474350c3762ef697f66fc9e4c9be0a4c251fa412fb7e46278a593c6ba') { throw 'Original package hash mismatch.' }
