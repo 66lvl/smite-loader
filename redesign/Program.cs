@@ -53,7 +53,7 @@ namespace SmiteLoader
             ClientSize = new Size(1020, 790);
             MinimumSize = new Size(1036, 829);
             StartPosition = FormStartPosition.CenterScreen;
-            BackColor = Color.FromArgb(12, 17, 23);
+            BackColor = Color.FromArgb(10, 12, 22);
             ForeColor = Color.FromArgb(232, 241, 242);
             Font = new Font("Segoe UI", 10f);
 
@@ -65,11 +65,11 @@ namespace SmiteLoader
             tabs.DrawItem += (sender, args) => {
                 bool selected = args.Index == tabs.SelectedIndex;
                 Rectangle rect = tabs.GetTabRect(args.Index);
-                using (var fill = new SolidBrush(Color.FromArgb(14, 21, 27)))
+                using (var fill = new SolidBrush(Color.FromArgb(16, 17, 31)))
                     args.Graphics.FillRectangle(fill, rect);
                 if (selected)
                 {
-                    using (var line = new SolidBrush(Color.FromArgb(102, 223, 201)))
+                    using (var line = new SolidBrush(Color.FromArgb(178, 154, 255)))
                         args.Graphics.FillRectangle(line, rect.Left + 16, rect.Bottom - 4, rect.Width - 32, 3);
                 }
                 using (var tabFont = new Font("Segoe UI Semibold", 10f))
@@ -79,70 +79,74 @@ namespace SmiteLoader
             };
             loaderPage.Text = "ПАНЕЛЬ";
             instructionsPage.Text = "ИНСТРУКЦИЯ";
-            loaderPage.BackColor = Color.FromArgb(12, 17, 23);
-            instructionsPage.BackColor = Color.FromArgb(12, 17, 23);
+            loaderPage.BackColor = Color.FromArgb(10, 12, 22);
+            instructionsPage.BackColor = Color.FromArgb(10, 12, 22);
             tabs.TabPages.Add(loaderPage);
             tabs.TabPages.Add(instructionsPage);
             Controls.Add(tabs);
 
-            var kicker = MakeLabel("ALWAYSLOSE  /  SMITE 2", 10f, FontStyle.Bold,
-                Color.FromArgb(102, 223, 201), new Rectangle(28, 17, 620, 24));
-            var title = MakeLabel("Центр управления", 24f, FontStyle.Bold,
-                Color.FromArgb(240, 246, 246), new Rectangle(25, 42, 660, 46));
-            var caption = MakeLabel("Лоадер, обновление SDK и журнал — в одном окне.", 10f, FontStyle.Regular,
-                Color.FromArgb(153, 172, 178), new Rectangle(29, 89, 720, 25));
-            version.Bounds = new Rectangle(30, 118, 940, 24);
+            var kicker = MakeLabel("ALWAYSLOSE   /   CONTROL SYSTEM", 9f, FontStyle.Bold,
+                Color.FromArgb(178, 154, 255), new Rectangle(30, 22, 620, 23));
+            var title = MakeLabel("SMITE 2", 31f, FontStyle.Bold,
+                Color.FromArgb(245, 244, 255), new Rectangle(25, 48, 450, 60));
+            var caption = MakeLabel("ВАШ ЦЕНТР УПРАВЛЕНИЯ", 9f, FontStyle.Bold,
+                Color.FromArgb(146, 150, 173), new Rectangle(32, 108, 500, 23));
+            version.Bounds = new Rectangle(420, 72, 552, 28);
             version.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            version.ForeColor = Color.FromArgb(190, 207, 210);
+            version.ForeColor = Color.FromArgb(192, 190, 214);
+            version.TextAlign = ContentAlignment.MiddleRight;
             version.Font = new Font("Segoe UI", 9.5f);
             version.AutoEllipsis = true;
 
-            var gameCard = MakeCard(new Rectangle(28, 157, 950, 142));
-            gameCard.Controls.Add(MakeLabel("01  /  ПОДКЛЮЧЕНИЕ", 10f, FontStyle.Bold,
-                Color.FromArgb(102, 223, 201), new Rectangle(23, 15, 450, 24)));
-            gameCard.Controls.Add(MakeLabel("Запустите игру через Steam и дождитесь лобби.", 10f, FontStyle.Regular,
-                Color.FromArgb(182, 196, 201), new Rectangle(24, 46, 710, 23)));
-            ConfigureButton(inject, "ЗАГРУЗИТЬ DLL", 24, 85, 190, true);
-            ConfigureButton(refresh, "ОБНОВИТЬ СТАТУС", 226, 85, 190, false);
+            var gameCard = MakeCard(new Rectangle(28, 151, 578, 268));
+            gameCard.Controls.Add(MakeLabel("01  /  ПОДКЛЮЧЕНИЕ", 9f, FontStyle.Bold,
+                Color.FromArgb(178, 154, 255), new Rectangle(27, 24, 450, 24)));
+            gameCard.Controls.Add(MakeLabel("Всё готово к игре?", 22f, FontStyle.Bold,
+                Color.FromArgb(246, 244, 255), new Rectangle(24, 60, 500, 45)));
+            gameCard.Controls.Add(MakeLabel("Запустите SMITE 2 через Steam, дождитесь лобби и загрузите DLL.",
+                10f, FontStyle.Regular, Color.FromArgb(167, 169, 190), new Rectangle(28, 115, 500, 48)));
+            ConfigureButton(inject, "ЗАГРУЗИТЬ DLL  →", 28, 190, 235, true);
+            ConfigureButton(refresh, "ОБНОВИТЬ СТАТУС", 276, 190, 220, false);
             gameCard.Controls.AddRange(new Control[] { inject, refresh });
 
-            var sdkCard = MakeCard(new Rectangle(28, 312, 950, 152));
-            sdkCard.Controls.Add(MakeLabel("02  /  ОБНОВЛЕНИЕ SDK", 10f, FontStyle.Bold,
-                Color.FromArgb(102, 223, 201), new Rectangle(23, 15, 460, 24)));
-            sdkCard.Controls.Add(MakeLabel("После обновления игры выполните три шага по порядку.", 10f, FontStyle.Regular,
-                Color.FromArgb(182, 196, 201), new Rectangle(24, 46, 750, 23)));
-            ConfigureButton(launchUpdateMode, "1  РЕЖИМ ОБНОВЛЕНИЯ", 24, 91, 238, false);
-            ConfigureButton(update, "2  ЗАГРУЗИТЬ DUMPER", 273, 91, 238, false);
-            ConfigureButton(finish, "3  СОБРАТЬ DLL", 522, 91, 210, false);
+            var sdkCard = MakeCard(new Rectangle(623, 151, 355, 268));
+            sdkCard.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            sdkCard.Controls.Add(MakeLabel("02  /  ОБНОВЛЕНИЕ SDK", 9f, FontStyle.Bold,
+                Color.FromArgb(178, 154, 255), new Rectangle(23, 24, 300, 24)));
+            sdkCard.Controls.Add(MakeLabel("После обновления игры:", 10f, FontStyle.Regular,
+                Color.FromArgb(167, 169, 190), new Rectangle(24, 53, 290, 25)));
+            ConfigureButton(launchUpdateMode, "01   РЕЖИМ ОБНОВЛЕНИЯ", 24, 88, 305, false);
+            ConfigureButton(update, "02   ЗАГРУЗИТЬ DUMPER", 24, 139, 305, false);
+            ConfigureButton(finish, "03   СОБРАТЬ DLL", 24, 190, 305, false);
             finish.Enabled = false;
             sdkCard.Controls.AddRange(new Control[] { launchUpdateMode, update, finish });
             new ToolTip().SetToolTip(launchUpdateMode,
                 "Игра запускается напрямую для обновления SDK. Офлайн-режим не гарантируется.");
 
-            var statusCaption = MakeLabel("СОСТОЯНИЕ", 9f, FontStyle.Bold,
-                Color.FromArgb(126, 147, 152), new Rectangle(30, 480, 200, 22));
-            status.Bounds = new Rectangle(30, 504, 930, 40);
+            var statusCaption = MakeLabel("СОСТОЯНИЕ  /  LIVE", 9f, FontStyle.Bold,
+                Color.FromArgb(142, 140, 166), new Rectangle(30, 442, 250, 22));
+            status.Bounds = new Rectangle(30, 468, 930, 40);
             status.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             status.Text = "Проверка игры и DLL...";
-            status.ForeColor = Color.FromArgb(102, 223, 201);
+            status.ForeColor = Color.FromArgb(178, 154, 255);
             status.Font = new Font("Segoe UI Semibold", 10f);
             status.AutoEllipsis = true;
-            progress.Bounds = new Rectangle(30, 549, 950, 5);
+            progress.Bounds = new Rectangle(30, 513, 950, 5);
             progress.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             progress.Style = ProgressBarStyle.Marquee;
             progress.Visible = false;
 
-            var logCaption = MakeLabel("ЖУРНАЛ  /  СОБЫТИЯ", 9f, FontStyle.Bold,
-                Color.FromArgb(126, 147, 152), new Rectangle(30, 570, 350, 26));
-            ConfigureButton(openLog, "ОТКРЫТЬ ЖУРНАЛ", 800, 561, 178, false);
+            var logCaption = MakeLabel("ЖУРНАЛ СОБЫТИЙ", 9f, FontStyle.Bold,
+                Color.FromArgb(142, 140, 166), new Rectangle(30, 550, 350, 26));
+            ConfigureButton(openLog, "ОТКРЫТЬ ЖУРНАЛ", 800, 538, 178, false);
             openLog.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            log.Bounds = new Rectangle(28, 608, 950, 112);
+            log.Bounds = new Rectangle(28, 591, 950, 129);
             log.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             log.Multiline = true;
             log.ReadOnly = true;
             log.ScrollBars = ScrollBars.Vertical;
-            log.BackColor = Color.FromArgb(16, 24, 31);
-            log.ForeColor = Color.FromArgb(194, 211, 214);
+            log.BackColor = Color.FromArgb(17, 19, 32);
+            log.ForeColor = Color.FromArgb(192, 190, 214);
             log.Font = new Font("Consolas", 9f);
             log.BorderStyle = BorderStyle.FixedSingle;
 
@@ -171,10 +175,10 @@ namespace SmiteLoader
 
         static Panel MakeCard(Rectangle bounds)
         {
-            var card = new Panel { Bounds = bounds, BackColor = Color.FromArgb(19, 28, 35),
+            var card = new Panel { Bounds = bounds, BackColor = Color.FromArgb(21, 23, 40),
                 Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right };
             card.Paint += (sender, e) => {
-                using (var border = new Pen(Color.FromArgb(44, 62, 68)))
+                using (var border = new Pen(Color.FromArgb(59, 55, 82)))
                     e.Graphics.DrawRectangle(border, 0, 0, card.ClientSize.Width - 1, card.ClientSize.Height - 1);
             };
             return card;
@@ -185,7 +189,7 @@ namespace SmiteLoader
             var guide = new FlowLayoutPanel {
                 Dock = DockStyle.Fill, AutoScroll = true, FlowDirection = FlowDirection.TopDown,
                 WrapContents = false, Padding = new Padding(30, 26, 24, 24),
-                BackColor = Color.FromArgb(12, 17, 23), ForeColor = Color.White
+                BackColor = Color.FromArgb(10, 12, 22), ForeColor = Color.White
             };
             instructionsPage.Controls.Add(guide);
             AddGuideText(guide, "КАК ПОЛЬЗОВАТЬСЯ ЛОАДЕРОМ", 20f, FontStyle.Bold,
@@ -193,14 +197,14 @@ namespace SmiteLoader
             AddGuideText(guide, "Режим обновления запускает EXE игры напрямую. Офлайн-режим не гарантируется.",
                 10f, FontStyle.Regular, Color.FromArgb(229, 185, 144));
             AddGuideText(guide, "01  /  ПОДКЛЮЧЕНИЕ", 12f, FontStyle.Bold,
-                Color.FromArgb(102, 223, 201));
+                Color.FromArgb(178, 154, 255));
             AddGuideText(guide,
                 "1. Запустите игру через Steam и дождитесь лобби.\n" +
                 "2. На вкладке «Панель» нажмите «Загрузить DLL».\n" +
                 "3. Если DLL отсутствует, соберите её с помощью Build_Trainer_for_Loader.bat.",
                 11f, FontStyle.Regular, Color.FromArgb(210, 225, 227));
             AddGuideText(guide, "02  /  ПОСЛЕ ОБНОВЛЕНИЯ ИГРЫ", 12f, FontStyle.Bold,
-                Color.FromArgb(102, 223, 201));
+                Color.FromArgb(178, 154, 255));
             AddGuideText(guide,
                 "1. Закройте игру и нажмите «Режим обновления».\n" +
                 "2. Нажмите «Загрузить Dumper» и дождитесь завершения генерации SDK.\n" +
@@ -209,7 +213,7 @@ namespace SmiteLoader
                 "5. Нажмите «Загрузить DLL».",
                 11f, FontStyle.Regular, Color.FromArgb(210, 225, 227));
             AddGuideText(guide, "ЕСЛИ ВОЗНИКЛА ОШИБКА", 12f, FontStyle.Bold,
-                Color.FromArgb(102, 223, 201));
+                Color.FromArgb(178, 154, 255));
             AddGuideText(guide,
                 "Откройте журнал на вкладке «Панель». Если игра не найдена, выберите Hemingway-Win64-Shipping.exe вручную.",
                 11f, FontStyle.Regular, Color.FromArgb(182, 196, 201));
@@ -233,10 +237,10 @@ namespace SmiteLoader
             button.Bounds = new Rectangle(x, y, width, 42);
             button.FlatStyle = FlatStyle.Flat;
             button.FlatAppearance.BorderSize = primary ? 0 : 1;
-            button.FlatAppearance.BorderColor = Color.FromArgb(65, 86, 90);
-            button.FlatAppearance.MouseOverBackColor = primary ? Color.FromArgb(139, 235, 215) : Color.FromArgb(38, 55, 63);
-            button.BackColor = primary ? Color.FromArgb(102, 223, 201) : Color.FromArgb(29, 41, 48);
-            button.ForeColor = primary ? Color.FromArgb(12, 31, 30) : Color.FromArgb(221, 234, 234);
+            button.FlatAppearance.BorderColor = Color.FromArgb(84, 77, 112);
+            button.FlatAppearance.MouseOverBackColor = primary ? Color.FromArgb(206, 188, 255) : Color.FromArgb(48, 43, 70);
+            button.BackColor = primary ? Color.FromArgb(178, 154, 255) : Color.FromArgb(35, 35, 55);
+            button.ForeColor = primary ? Color.FromArgb(24, 17, 44) : Color.FromArgb(221, 234, 234);
             button.Font = new Font("Segoe UI Semibold", 9f);
             button.Cursor = Cursors.Hand;
             button.UseVisualStyleBackColor = false;
@@ -255,7 +259,7 @@ namespace SmiteLoader
         void SetStatus(string message, bool error = false)
         {
             status.Text = message;
-            status.ForeColor = error ? Color.FromArgb(255, 151, 137) : Color.FromArgb(123, 225, 208);
+            status.ForeColor = error ? Color.FromArgb(255, 151, 137) : Color.FromArgb(178, 154, 255);
             if (error) WriteLog(message);
         }
 
