@@ -1,0 +1,130 @@
+name: Build and publish portable loader
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build-test-release:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Package portable project and compile loader
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          gh release view v2.0.0 --repo 66lvl/smite-loader 2>$null
+          if ($LASTEXITCODE -eq 0) { throw 'v2.0.0 already exists; refusing to overwrite the release.' }
+          gh release download v1.0.0 --repo 66lvl/smite-loader --pattern SmiteLoader-package.zip --dir .
+          if ($LASTEXITCODE -ne 0) { throw 'Could not download the original private package.' }
+          if ((Get-FileHash -Algorithm SHA256 SmiteLoader-package.zip).Hash -ne '09418cc474350c3762ef697f66fc9e4c9be0a4c251fa412fb7e46278a593c6ba') { throw 'Original package hash mismatch.' }
+          Copy-Item SmiteLoader-package.zip SmiteLoader-source.zip
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $zip = [IO.Compression.ZipFile]::Open((Join-Path $pwd 'SmiteLoader-source.zip'), [IO.Compression.ZipArchiveMode]::Update)
+          function ReadEntry([string]$name) {
+            $entry = $zip.GetEntry($name)
+            if (-not $entry) { throw "Missing package entry: $name" }
+            $r = New-Object IO.StreamReader($entry.Open(), [Text.Encoding]::UTF8, $true)
+            try { return $r.ReadToEnd() } finally { $r.Dispose() }
+          }
+          function WriteEntry([string]$name, [string]$text) {
+            $entry = $zip.GetEntry($name)
+            if ($entry) { $entry.Delete() }
+            $entry = $zip.CreateEntry($name, [IO.Compression.CompressionLevel]::Optimal)
+            $w = New-Object IO.StreamWriter($entry.Open(), (New-Object Text.UTF8Encoding($true)))
+            try { $w.Write($text.TrimStart([char]0xFEFF)) } finally { $w.Dispose() }
+          }
+          try {
+            $build = ReadEntry 'tools/update_sdk_build.ps1'
+            $complete = ReadEntry 'tools/complete_sdk_update.ps1'
+            $project = ReadEntry 'tools/loader/SmiteLoader.csproj'
+            $from = '[string]$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot ''..'')).Path'
+            $to = $from + ',`n    [string]$OutputDir = '''''
+            $to = $to.Replace('`n', "`n")
+            if (-not $build.Contains($from) -or -not $complete.Contains($from)) { throw 'Original script signature changed.' }
+            $build = $build.Replace($from, $to)
+            $complete = $complete.Replace($from, $to)
+            $fromDist = '$dist = Join-Path $ProjectRoot ''dist'''
+            $toDist = '$dist = if ($OutputDir) { [IO.Path]::GetFullPath($OutputDir) } else { Join-Path $ProjectRoot ''dist'' }'
+            if (-not $build.Contains($fromDist)) { throw 'Original output path changed.' }
+            $build = $build.Replace($fromDist, $toDist)
+            $fromCall = '& (Join-Path $PSScriptRoot ''update_sdk_build.ps1'') -ProjectRoot $project'
+            if (-not $complete.Contains($fromCall)) { throw 'Original SDK build call changed.' }
+            $complete = $complete.Replace($fromCall, $fromCall + ' -OutputDir $OutputDir')
+            $compile = '<Compile Include="DumperConfiguration.cs" />'
+            if (-not $project.Contains($compile)) { throw 'Loader project shape changed.' }
+            $resource = '<EmbeddedResource Include="PortableBootstrap.ps1"><LogicalName>PortableBootstrap.ps1</LogicalName></EmbeddedResource>'
+            $project = $project.Replace($compile, $compile + "`r`n    " + $resource)
+            WriteEntry 'tools/update_sdk_build.ps1' $build
+            WriteEntry 'tools/complete_sdk_update.ps1' $complete
+            WriteEntry 'tools/loader/SmiteLoader.csproj' $project
+            WriteEntry 'tools/loader/Program.cs' ([IO.File]::ReadAllText((Join-Path $pwd 'portable\Program.cs')))
+            WriteEntry 'tools/loader/PortableBootstrap.ps1' ([IO.File]::ReadAllText((Join-Path $pwd 'portable\PortableBootstrap.ps1')))
+            WriteEntry '.smite-portable-v2' 'SMITE portable project v2.0.0'
+          } finally { $zip.Dispose() }
+          $hash = (Get-FileHash -Algorithm SHA256 SmiteLoader-source.zip).Hash
+          Write-Host "Source package SHA-256: $hash"
+          [IO.File]::WriteAllText((Join-Path $pwd 'source-sha256.txt'), $hash)
+          New-Item -ItemType Directory -Path loaderbuild | Out-Null
+          $zip = [IO.Compression.ZipFile]::OpenRead((Join-Path $pwd 'SmiteLoader-source.zip'))
+          try {
+            foreach ($name in @('SmiteLoader.csproj','GameLocator.cs','NativeDllInjector.cs','DumperConfiguration.cs','PortableBootstrap.ps1')) {
+              $entry = $zip.GetEntry("tools/loader/$name")
+              if (-not $entry) { throw "Missing loader file $name" }
+              [IO.Compression.ZipFileExtensions]::ExtractToFile($entry, (Join-Path (Join-Path $pwd 'loaderbuild') $name), $true)
+            }
+          } finally { $zip.Dispose() }
+          $source = [IO.File]::ReadAllText((Join-Path $pwd 'portable\Program.cs'))
+          if (-not $source.Contains('__PACKAGE_HASH__')) { throw 'Missing source hash placeholder.' }
+          $source = $source.Replace('__PACKAGE_HASH__', $hash)
+          [IO.File]::WriteAllText((Join-Path $pwd 'loaderbuild\Program.cs'), $source.TrimStart([char]0xFEFF), (New-Object Text.UTF8Encoding($true)))
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $root = & $vswhere -latest -products '*' -requires Microsoft.Component.MSBuild -property installationPath | Select-Object -First 1
+          if (-not $root) { throw 'MSBuild not found.' }
+          & (Join-Path $root 'MSBuild\Current\Bin\MSBuild.exe') loaderbuild\SmiteLoader.csproj /t:Rebuild /p:Configuration=Release /p:Platform=AnyCPU /nologo /v:minimal
+          if ($LASTEXITCODE -ne 0) { throw "Loader build failed: $LASTEXITCODE" }
+          New-Item -ItemType Directory -Path portable-out | Out-Null
+          Copy-Item loaderbuild\bin\Release\SmiteLoader.exe portable-out\SmiteLoader.exe
+      - name: Verify first-run extraction and local DLL build
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $project = Join-Path $env:RUNNER_TEMP 'smite-portable-test\LocalLow\project'
+          $output = Join-Path $env:RUNNER_TEMP 'smite-portable-test\Desktop\SmiteLoader'
+          $package = Join-Path $pwd 'SmiteLoader-source.zip'
+          $hash = [IO.File]::ReadAllText((Join-Path $pwd 'source-sha256.txt')).Trim()
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File portable\PortableBootstrap.ps1 -ProjectRoot $project -OutputDir $output -PackageUrl 'unused' -ExpectedHash $hash -TestArchivePath $package -CiMode
+          if ($LASTEXITCODE -ne 0) { throw "First-run test failed: $LASTEXITCODE" }
+          if (-not (Test-Path (Join-Path $output 'Dumper-7.dll'))) { throw 'Dumper DLL not copied to loader directory.' }
+          if (-not (Get-ChildItem -LiteralPath $output -Filter 'Smite_Internal_*.dll')) { throw 'Trainer DLL not built in loader directory.' }
+          if (-not (Test-Path (Join-Path $project '.smite-portable-v2'))) { throw 'Project was not installed in its separate directory.' }
+          Write-Host 'First-run project extraction and local DLL build passed. Game injection was not tested.'
+      - name: Prepare friend archive
+        shell: powershell
+        run: |
+          $readme = @'
+          Распакуйте архив в отдельную папку, например на рабочем столе.
+          Запустите SmiteLoader.exe и подтвердите первый запуск.
+          Проект скачается в AppData\LocalLow\SmiteLoader\project.
+          Dumper-7.dll и собранная DLL будут рядом с EXE.
+          Если потребуются Visual Studio Build Tools, появится отдельный запрос.
+          Запускайте игру через Steam и дождитесь лобби. После обновления игры используйте шаги обновления SDK в лоадере.
+          '@
+          [IO.File]::WriteAllText((Join-Path $pwd 'portable-out\README.txt'), $readme, (New-Object Text.UTF8Encoding($true)))
+          Compress-Archive -Path portable-out\* -DestinationPath SmiteLoader-portable.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: portable-tested-files
+          path: |
+            SmiteLoader-portable.zip
+            SmiteLoader-source.zip
+          retention-days: 14
+      - name: Publish versioned release
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create v2.0.0 SmiteLoader-portable.zip SmiteLoader-source.zip --repo 66lvl/smite-loader --title 'SMITE Loader v2.0.0' --notes 'Portable loader: project in LocalLow, DLLs alongside the executable. First-run setup requires internet and MSVC Build Tools. Generated SDK updates remain local.'
+          if ($LASTEXITCODE -ne 0) { throw "Release creation failed: $LASTEXITCODE" }
