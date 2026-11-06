@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -24,9 +25,8 @@ namespace SmiteLoader
     {
         readonly string projectRoot;
         readonly string dist;
-        readonly TabControl tabs = new TabControl();
-        readonly TabPage loaderPage = new TabPage("Loader");
-        readonly TabPage instructionsPage = new TabPage("Instructions");
+        readonly Panel loaderPage = new Panel();
+        readonly Panel instructionsPage = new Panel();
         readonly Button inject = new Button();
         readonly Button launchUpdateMode = new Button();
         readonly Button update = new Button();
@@ -57,33 +57,37 @@ namespace SmiteLoader
             ForeColor = Color.FromArgb(232, 241, 242);
             Font = new Font("Segoe UI", 10f);
 
-            tabs.Dock = DockStyle.Fill;
-            tabs.DrawMode = TabDrawMode.OwnerDrawFixed;
-            tabs.ItemSize = new Size(165, 42);
-            tabs.SizeMode = TabSizeMode.Fixed;
-            tabs.Padding = new Point(18, 8);
-            tabs.DrawItem += (sender, args) => {
-                bool selected = args.Index == tabs.SelectedIndex;
-                Rectangle rect = tabs.GetTabRect(args.Index);
-                using (var fill = new SolidBrush(Color.FromArgb(16, 17, 31)))
-                    args.Graphics.FillRectangle(fill, rect);
-                if (selected)
-                {
-                    using (var line = new SolidBrush(Color.FromArgb(178, 154, 255)))
-                        args.Graphics.FillRectangle(line, rect.Left + 16, rect.Bottom - 4, rect.Width - 32, 3);
-                }
-                using (var tabFont = new Font("Segoe UI Semibold", 10f))
-                    TextRenderer.DrawText(args.Graphics, tabs.TabPages[args.Index].Text,
-                        tabFont, rect, selected ? Color.FromArgb(234, 250, 246) : Color.FromArgb(150, 166, 172),
-                        TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
-            };
-            loaderPage.Text = "ПАНЕЛЬ";
-            instructionsPage.Text = "ИНСТРУКЦИЯ";
+            // Use a custom dark navigation bar instead of the native white TabControl header.
+            var nav = new Panel { Dock = DockStyle.Top, Height = 42,
+                BackColor = Color.FromArgb(16, 17, 31) };
+            var mainTab = new Button();
+            var guideTab = new Button();
+            ConfigureNavButton(mainTab, "ПАНЕЛЬ", 16);
+            ConfigureNavButton(guideTab, "ИНСТРУКЦИЯ", 181);
+            var indicator = new Panel { Bounds = new Rectangle(32, 39, 133, 3),
+                BackColor = Color.FromArgb(178, 154, 255) };
+            nav.Controls.AddRange(new Control[] { mainTab, guideTab, indicator });
+            indicator.BringToFront();
+            var pages = new Panel { Dock = DockStyle.Fill, BackColor = Color.FromArgb(10, 12, 22) };
+            loaderPage.Dock = DockStyle.Fill;
+            instructionsPage.Dock = DockStyle.Fill;
             loaderPage.BackColor = Color.FromArgb(10, 12, 22);
             instructionsPage.BackColor = Color.FromArgb(10, 12, 22);
-            tabs.TabPages.Add(loaderPage);
-            tabs.TabPages.Add(instructionsPage);
-            Controls.Add(tabs);
+            pages.Controls.Add(instructionsPage);
+            pages.Controls.Add(loaderPage);
+            instructionsPage.Visible = false;
+            mainTab.Click += (sender, args) => {
+                instructionsPage.Visible = false; loaderPage.Visible = true; loaderPage.BringToFront();
+                indicator.Left = 32; mainTab.ForeColor = Color.White;
+                guideTab.ForeColor = Color.FromArgb(150, 150, 173);
+            };
+            guideTab.Click += (sender, args) => {
+                loaderPage.Visible = false; instructionsPage.Visible = true; instructionsPage.BringToFront();
+                indicator.Left = 197; guideTab.ForeColor = Color.White;
+                mainTab.ForeColor = Color.FromArgb(150, 150, 173);
+            };
+            Controls.Add(pages);
+            Controls.Add(nav);
 
             var kicker = MakeLabel("ALWAYSLOSE   /   CONTROL SYSTEM", 9f, FontStyle.Bold,
                 Color.FromArgb(178, 154, 255), new Rectangle(30, 22, 620, 23));
@@ -92,7 +96,7 @@ namespace SmiteLoader
             var caption = MakeLabel("ВАШ ЦЕНТР УПРАВЛЕНИЯ", 9f, FontStyle.Bold,
                 Color.FromArgb(146, 150, 173), new Rectangle(32, 108, 500, 23));
             version.Bounds = new Rectangle(420, 72, 552, 28);
-            version.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            version.Anchor = AnchorStyles.Top | AnchorStyles.Left;
             version.ForeColor = Color.FromArgb(192, 190, 214);
             version.TextAlign = ContentAlignment.MiddleRight;
             version.Font = new Font("Segoe UI", 9.5f);
@@ -110,7 +114,7 @@ namespace SmiteLoader
             gameCard.Controls.AddRange(new Control[] { inject, refresh });
 
             var sdkCard = MakeCard(new Rectangle(623, 151, 355, 268));
-            sdkCard.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            sdkCard.Anchor = AnchorStyles.Top | AnchorStyles.Left;
             sdkCard.Controls.Add(MakeLabel("02  /  ОБНОВЛЕНИЕ SDK", 9f, FontStyle.Bold,
                 Color.FromArgb(178, 154, 255), new Rectangle(23, 24, 300, 24)));
             sdkCard.Controls.Add(MakeLabel("После обновления игры:", 10f, FontStyle.Regular,
@@ -126,22 +130,22 @@ namespace SmiteLoader
             var statusCaption = MakeLabel("СОСТОЯНИЕ  /  LIVE", 9f, FontStyle.Bold,
                 Color.FromArgb(142, 140, 166), new Rectangle(30, 442, 250, 22));
             status.Bounds = new Rectangle(30, 468, 930, 40);
-            status.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            status.Anchor = AnchorStyles.Top | AnchorStyles.Left;
             status.Text = "Проверка игры и DLL...";
             status.ForeColor = Color.FromArgb(178, 154, 255);
             status.Font = new Font("Segoe UI Semibold", 10f);
             status.AutoEllipsis = true;
             progress.Bounds = new Rectangle(30, 513, 950, 5);
-            progress.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            progress.Anchor = AnchorStyles.Top | AnchorStyles.Left;
             progress.Style = ProgressBarStyle.Marquee;
             progress.Visible = false;
 
             var logCaption = MakeLabel("ЖУРНАЛ СОБЫТИЙ", 9f, FontStyle.Bold,
                 Color.FromArgb(142, 140, 166), new Rectangle(30, 550, 350, 26));
             ConfigureButton(openLog, "ОТКРЫТЬ ЖУРНАЛ", 800, 538, 178, false);
-            openLog.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            openLog.Anchor = AnchorStyles.Top | AnchorStyles.Left;
             log.Bounds = new Rectangle(28, 591, 950, 129);
-            log.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            log.Anchor = AnchorStyles.Top | AnchorStyles.Left;
             log.Multiline = true;
             log.ReadOnly = true;
             log.ScrollBars = ScrollBars.Vertical;
@@ -152,6 +156,28 @@ namespace SmiteLoader
 
             loaderPage.Controls.AddRange(new Control[] { kicker, title, caption, version, gameCard, sdkCard,
                 statusCaption, status, progress, logCaption, openLog, log });
+            // Compute positions only after the page has its real size, and again on resize.
+            Action layoutDashboard = () => {
+                float factor = DeviceDpi / 96f;
+                Func<int, int> px = value => (int)Math.Round(value * factor);
+                int width = loaderPage.ClientSize.Width;
+                int height = loaderPage.ClientSize.Height;
+                if (width <= 0 || height <= 0) return;
+                int margin = px(28), gap = px(17), sdkWidth = px(355);
+                int rightX = width - margin - sdkWidth;
+                int leftWidth = Math.Max(px(510), rightX - margin - gap);
+                gameCard.SetBounds(margin, px(151), leftWidth, px(268));
+                sdkCard.SetBounds(rightX, px(151), sdkWidth, px(268));
+                int versionX = Math.Max(px(420), width - px(580));
+                version.SetBounds(versionX, px(72), Math.Max(0, width - margin - versionX), px(28));
+                status.SetBounds(px(30), px(468), Math.Max(0, width - px(60)), px(40));
+                progress.SetBounds(px(30), px(513), Math.Max(0, width - px(60)), px(5));
+                openLog.SetBounds(width - margin - px(178), px(538), px(178), px(42));
+                log.SetBounds(margin, px(591), Math.Max(0, width - 2 * margin),
+                    Math.Max(px(80), height - px(613)));
+            };
+            loaderPage.Resize += (sender, args) => layoutDashboard();
+            Shown += (sender, args) => layoutDashboard();
             BuildInstructions();
             inject.Click += async (s, e) => await InjectTrainer();
             launchUpdateMode.Click += (s, e) => LaunchForUpdate();
@@ -167,6 +193,36 @@ namespace SmiteLoader
             if (detectedGameExe != null) WriteLog("Auto-detected game executable: " + detectedGameExe);
         }
 
+        [DllImport("dwmapi.dll")]
+        static extern int DwmSetWindowAttribute(IntPtr handle, int attribute, ref int value, int size);
+
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            try
+            {
+                int enabled = 1;
+                if (DwmSetWindowAttribute(Handle, 20, ref enabled, sizeof(int)) != 0)
+                    DwmSetWindowAttribute(Handle, 19, ref enabled, sizeof(int));
+            }
+            catch (DllNotFoundException) { }
+            catch (EntryPointNotFoundException) { }
+        }
+
+        static void ConfigureNavButton(Button button, string text, int left)
+        {
+            button.Text = text;
+            button.Bounds = new Rectangle(left, 0, 165, 39);
+            button.FlatStyle = FlatStyle.Flat;
+            button.FlatAppearance.BorderSize = 0;
+            button.FlatAppearance.MouseOverBackColor = Color.FromArgb(35, 35, 55);
+            button.BackColor = Color.FromArgb(16, 17, 31);
+            button.ForeColor = text == "ПАНЕЛЬ" ? Color.White : Color.FromArgb(150, 150, 173);
+            button.Font = new Font("Segoe UI Semibold", 9f);
+            button.Cursor = Cursors.Hand;
+            button.UseVisualStyleBackColor = false;
+        }
+
         static Label MakeLabel(string text, float size, FontStyle style, Color color, Rectangle bounds)
         {
             return new Label { Text = text, Font = new Font("Segoe UI", size, style),
@@ -176,7 +232,7 @@ namespace SmiteLoader
         static Panel MakeCard(Rectangle bounds)
         {
             var card = new Panel { Bounds = bounds, BackColor = Color.FromArgb(21, 23, 40),
-                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right };
+                Anchor = AnchorStyles.Top | AnchorStyles.Left };
             card.Paint += (sender, e) => {
                 using (var border = new Pen(Color.FromArgb(59, 55, 82)))
                     e.Graphics.DrawRectangle(border, 0, 0, card.ClientSize.Width - 1, card.ClientSize.Height - 1);
