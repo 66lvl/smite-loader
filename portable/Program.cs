@@ -712,7 +712,9 @@ namespace SmiteLoader
                         CreateNoWindow = true,
                         WindowStyle = ProcessWindowStyle.Hidden,
                         RedirectStandardOutput = true,
-                        RedirectStandardError = true
+                        RedirectStandardError = true,
+                        StandardOutputEncoding = System.Text.Encoding.GetEncoding(System.Globalization.CultureInfo.CurrentCulture.TextInfo.OEMCodePage),
+                        StandardErrorEncoding = System.Text.Encoding.GetEncoding(System.Globalization.CultureInfo.CurrentCulture.TextInfo.OEMCodePage)
                     };
                     var windowsModules = Path.Combine(
                         Environment.GetFolderPath(Environment.SpecialFolder.Windows),
