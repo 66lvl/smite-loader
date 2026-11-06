@@ -1,4 +1,4 @@
-param(
+﻿param(
     [Parameter(Mandatory=$true)][string]$ProjectRoot,
     [Parameter(Mandatory=$true)][string]$OutputDir,
     [Parameter(Mandatory=$true)][string]$PackageUrl,
@@ -15,6 +15,7 @@ $output = [IO.Path]::GetFullPath($OutputDir)
 [IO.Directory]::CreateDirectory($output) | Out-Null
 $lock = $null
 $work = Join-Path $parent ('.setup-' + [guid]::NewGuid().ToString('N'))
+$installerWork = $null
 function Find-MSBuild {
     $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
     if (-not (Test-Path -LiteralPath $vswhere)) { return $null }
@@ -75,14 +76,16 @@ try {
         if ($CiMode) { throw 'Required MSVC build tools not found on test runner.' }
         $answer = [Windows.Forms.MessageBox]::Show('Для локальной сборки нужны Visual Studio Build Tools с C++ и Windows SDK. Скачать и запустить установщик Microsoft? Потребуются место на диске и права администратора.', 'SMITE Loader — компоненты сборки', 'YesNo', 'Question')
         if ($answer -ne [Windows.Forms.DialogResult]::Yes) { throw 'Build tools installation cancelled.' }
-        [IO.Directory]::CreateDirectory($work) | Out-Null
-        $bootstrap = Join-Path $work 'vs_buildtools.exe'
+        $installerWork = Join-Path ([IO.Path]::GetTempPath()) ('SmiteBuildTools-' + [guid]::NewGuid().ToString('N'))
+        [IO.Directory]::CreateDirectory($installerWork) | Out-Null
+        $bootstrap = Join-Path $installerWork 'vs_buildtools.exe'
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
         Invoke-WebRequest -Uri 'https://aka.ms/vs/17/release/vs_buildtools.exe' -OutFile $bootstrap -UseBasicParsing
         $sig = Get-AuthenticodeSignature -LiteralPath $bootstrap
         if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notmatch 'Microsoft Corporation') { throw 'Microsoft installer signature could not be verified.' }
         $params = @('--wait','--passive','--norestart','--add','Microsoft.VisualStudio.Workload.VCTools','--includeRecommended')
-        $child = Start-Process -FilePath $bootstrap -ArgumentList $params -Verb RunAs -Wait -PassThru
+        Write-Host "Starting Microsoft Build Tools installer from: $installerWork"
+        $child = Start-Process -FilePath $bootstrap -ArgumentList $params -WorkingDirectory $installerWork -Verb RunAs -Wait -PassThru
         if ($child.ExitCode -eq 3010) { throw 'Windows restart required. Restart and run the loader again.' }
         if ($child.ExitCode -ne 0) { throw "Visual Studio installer returned $($child.ExitCode)." }
         if (-not (Find-MSBuild)) { throw 'MSVC build tools are still missing.' }
@@ -100,5 +103,6 @@ try {
     Write-Host "DLL directory: $output"
 } finally {
     if ($lock) { $lock.Dispose() }
+    if ($installerWork -and (Test-Path -LiteralPath $installerWork)) { Remove-Item -LiteralPath $installerWork -Recurse -Force -ErrorAction SilentlyContinue }
     if (Test-Path -LiteralPath $work) { Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue }
 }
