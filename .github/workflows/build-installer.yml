@@ -25,28 +25,4 @@ jobs:
           name: SmiteSetup
           path: SmiteSetup.exe
           if-no-files-found: error
-          retention-days: 14name: Build Windows installer
-on:
-  workflow_dispatch:
-permissions:
-  contents: read
-jobs:
-  build:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Compile setup
-        shell: powershell
-        run: |
-          $text = [IO.File]::ReadAllText('Install.ps1')
-          [IO.File]::WriteAllText('Install.utf8.ps1', $text.TrimStart([char]0xFEFF), (New-Object System.Text.UTF8Encoding($true)))
-          $csc = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
-          & $csc /nologo /target:winexe /platform:x64 /codepage:65001 /out:SmiteSetup.exe /reference:System.Windows.Forms.dll '/resource:Install.utf8.ps1,Install.ps1' Setup.cs
-          if ($LASTEXITCODE -ne 0) { throw "Installer compile failed: $LASTEXITCODE" }
-          if (!(Test-Path SmiteSetup.exe)) { throw 'No installer EXE was produced.' }
-      - uses: actions/upload-artifact@v4
-        with:
-          name: SmiteSetup
-          path: SmiteSetup.exe
-          if-no-files-found: error
           retention-days: 14
