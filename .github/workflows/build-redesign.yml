@@ -1,0 +1,33 @@
+name: Build redesigned loader
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build redesigned loader
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download v1.0.0 --repo 66lvl/smite-loader --pattern SmiteLoader-package.zip --dir .
+          if ($LASTEXITCODE -ne 0) { throw 'Release download failed' }
+          if ((Get-FileHash -Algorithm SHA256 SmiteLoader-package.zip).Hash -ne '09418cc474350c3762ef697f66fc9e4c9be0a4c251fa412fb7e46278a593c6ba') { throw 'Unexpected package hash' }
+          Expand-Archive -LiteralPath SmiteLoader-package.zip -DestinationPath project
+          $source = [IO.File]::ReadAllText((Join-Path $pwd 'redesign\Program.cs'))
+          [IO.File]::WriteAllText((Join-Path $pwd 'project\tools\loader\Program.cs'), $source.TrimStart([char]0xFEFF), (New-Object System.Text.UTF8Encoding($true)))
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $root = & $vswhere -latest -products '*' -requires Microsoft.Component.MSBuild -property installationPath | Select-Object -First 1
+          if (-not $root) { throw 'MSBuild not found' }
+          $msbuild = Join-Path $root 'MSBuild\Current\Bin\MSBuild.exe'
+          & $msbuild project\tools\loader\SmiteLoader.csproj /t:Rebuild /p:Configuration=Release /p:Platform=AnyCPU /nologo /v:minimal
+          if ($LASTEXITCODE -ne 0) { throw "Build failed: $LASTEXITCODE" }
+          Copy-Item project\tools\loader\bin\Release\SmiteLoader.exe SmiteLoader.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SmiteLoader-redesign
+          path: SmiteLoader.exe
+          retention-days: 14
