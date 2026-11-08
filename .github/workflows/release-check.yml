@@ -1,0 +1,119 @@
+name: Build loader prerequisite check
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Update source package and compile loader
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Add-Type -AssemblyName System.IO.Compression
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          gh release download v2.0.0 --repo 66lvl/smite-loader --pattern SmiteLoader-source.zip --dir .
+          if ($LASTEXITCODE -ne 0) { throw 'Source package download failed.' }
+          $oldHash = (Get-FileHash -Algorithm SHA256 SmiteLoader-source.zip).Hash
+          if ($oldHash -ne 'b47b8bf24bd3bfed0067296f3e31f874d1336585dc80317c434db1ddebc34f1e') { throw 'Unexpected original package hash.' }
+          $utf8 = New-Object Text.UTF8Encoding($true)
+          $zip = [IO.Compression.ZipFile]::Open((Join-Path $pwd 'SmiteLoader-source.zip'), [IO.Compression.ZipArchiveMode]::Update)
+          function WriteEntry([string]$name, [string]$text) {
+            $entry = $zip.GetEntry($name)
+            if ($entry) { $entry.Delete() }
+            $entry = $zip.CreateEntry($name, [IO.Compression.CompressionLevel]::Optimal)
+            $writer = New-Object IO.StreamWriter($entry.Open(), $utf8)
+            try { $writer.Write($text.TrimStart([char]0xFEFF)) } finally { $writer.Dispose() }
+          }
+          try {
+            WriteEntry 'tools/loader/Program.cs' ([IO.File]::ReadAllText((Join-Path $pwd 'portable\Program.cs')))
+            WriteEntry 'tools/loader/PortableBootstrap.ps1' ([IO.File]::ReadAllText((Join-Path $pwd 'portable\PortableBootstrap.ps1')))
+          } finally { $zip.Dispose() }
+          $hash = (Get-FileHash -Algorithm SHA256 SmiteLoader-source.zip).Hash
+          New-Item -ItemType Directory -Path loaderbuild | Out-Null
+          $zip = [IO.Compression.ZipFile]::OpenRead((Join-Path $pwd 'SmiteLoader-source.zip'))
+          try {
+            foreach ($name in @('SmiteLoader.csproj','GameLocator.cs','NativeDllInjector.cs','DumperConfiguration.cs','PortableBootstrap.ps1')) {
+              $entry = $zip.GetEntry("tools/loader/$name")
+              if (-not $entry) { throw "Missing file $name" }
+              [IO.Compression.ZipFileExtensions]::ExtractToFile($entry, (Join-Path (Join-Path $pwd 'loaderbuild') $name), $true)
+            }
+          } finally { $zip.Dispose() }
+          $source = [IO.File]::ReadAllText((Join-Path $pwd 'portable\Program.cs')).TrimStart([char]0xFEFF)
+          if (-not $source.Contains('__PACKAGE_HASH__')) { throw 'Hash placeholder missing.' }
+          [IO.File]::WriteAllText((Join-Path $pwd 'loaderbuild\Program.cs'), $source.Replace('__PACKAGE_HASH__', $hash), $utf8)
+          $script = [IO.File]::ReadAllText((Join-Path $pwd 'loaderbuild\PortableBootstrap.ps1'))
+          if ($script -match 'vs_buildtools\.exe|aka\.ms/vs/17|Start-Process|-Verb\s+RunAs') { throw 'Unexpected installer operation in bootstrap.' }
+          $tokens = $null; $errors = $null
+          [void][Management.Automation.Language.Parser]::ParseFile((Join-Path $pwd 'loaderbuild\PortableBootstrap.ps1'), [ref]$tokens, [ref]$errors)
+          if ($errors.Count -gt 0) { $errors | Out-String | Write-Host; throw 'Bootstrap script does not parse.' }
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $root = & $vswhere -latest -products '*' -requires Microsoft.Component.MSBuild -property installationPath | Select-Object -First 1
+          if (-not $root) { throw 'MSBuild not found.' }
+          & (Join-Path $root 'MSBuild\Current\Bin\MSBuild.exe') loaderbuild\SmiteLoader.csproj /t:Rebuild /p:Configuration=Release /p:Platform=AnyCPU /nologo /v:minimal
+          if ($LASTEXITCODE -ne 0) { throw "Loader compilation failed: $LASTEXITCODE" }
+          $exe = Join-Path $pwd 'loaderbuild\bin\Release\SmiteLoader.exe'
+          $assembly = [Reflection.Assembly]::LoadFrom($exe)
+          if ($assembly.GetManifestResourceNames() -notcontains 'PortableBootstrap.ps1') { throw 'Embedded bootstrap missing.' }
+          $reader = New-Object IO.StreamReader($assembly.GetManifestResourceStream('PortableBootstrap.ps1'))
+          try { $embedded = $reader.ReadToEnd() } finally { $reader.Dispose() }
+          if ($embedded -match 'vs_buildtools\.exe|aka\.ms/vs/17|Start-Process|-Verb\s+RunAs') { throw 'Unexpected installer operation embedded.' }
+      - name: Validate prerequisite checks
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Add-Type -AssemblyName System.Windows.Forms
+          [Windows.Forms.Application]::EnableVisualStyles()
+          $assembly = [Reflection.Assembly]::LoadFrom((Join-Path $pwd 'loaderbuild\bin\Release\SmiteLoader.exe'))
+          $type = $assembly.GetType('SmiteLoader.LoaderForm', $true)
+          $method = $type.GetMethod('FormatRequirements', [Reflection.BindingFlags]'NonPublic,Static')
+          $none = [string]$method.Invoke($null, [object[]]@($true,$true,$true,$true,$true))
+          if ($none.Length -ne 0) { throw 'Unexpected missing prerequisite.' }
+          $missing = [string]$method.Invoke($null, [object[]]@($false,$false,$false,$false,$false))
+          if (-not $missing.Contains('MSBuild') -or -not $missing.Contains('SDK') -or -not $missing.Contains('PowerShell')) { throw 'Incomplete missing-components list.' }
+          $form = [Activator]::CreateInstance($type, $true)
+          try {
+            $actual = [string]$type.GetMethod('MissingBuildRequirements', [Reflection.BindingFlags]'NonPublic,Instance').Invoke($form, $null)
+            if ($actual) { Write-Host $actual; throw 'Prerequisites not detected on build runner.' }
+          } finally { $form.Dispose() }
+      - name: Smoke-test existing project handling
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $env:RUNNER_TEMP 'smite-check-smoke\project'
+          $output = Join-Path $env:RUNNER_TEMP 'smite-check-smoke\out'
+          foreach ($dir in @($root, "$root\tools", "$root\dist", "$root\CppSDK", $output)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+          foreach ($name in @('Trainer.sln','Trainer.vcxproj','.smite-portable-v2','tools\update_sdk_build.ps1','tools\complete_sdk_update.ps1','dist\Dumper-7.dll')) { [IO.File]::WriteAllText((Join-Path $root $name), 'smoke test') }
+          [IO.File]::WriteAllText((Join-Path $root 'CppSDK\SDK.hpp'), "// 1.0.0-12345`n")
+          [IO.File]::WriteAllText((Join-Path $output 'Smite_Internal_12345.dll'), 'do not overwrite')
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File loaderbuild\PortableBootstrap.ps1 -ProjectRoot $root -OutputDir $output -PackageUrl 'unused' -ExpectedHash 'unused' -CiMode
+          if ($LASTEXITCODE -ne 0) { throw "Existing project smoke test failed: $LASTEXITCODE" }
+          if (-not (Test-Path (Join-Path $output 'Dumper-7.dll'))) { throw 'Dumper copy failed.' }
+          if ([IO.File]::ReadAllText((Join-Path $output 'Smite_Internal_12345.dll')) -ne 'do not overwrite') { throw 'Existing DLL was overwritten.' }
+      - name: Package loader
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Path portable-out | Out-Null
+          Copy-Item loaderbuild\bin\Release\SmiteLoader.exe portable-out\SmiteLoader.exe
+          $text = 'Install Visual Studio 2022 Build Tools with MSVC v143 (x64) and a Windows SDK separately. The loader checks requirements; it does not install Visual Studio. Extract and run SmiteLoader.exe.'
+          [IO.File]::WriteAllText((Join-Path $pwd 'portable-out\README.txt'), $text, (New-Object Text.UTF8Encoding($true)))
+          Compress-Archive -Path portable-out\* -DestinationPath SmiteLoader-portable.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: loader-prerequisite-release
+          path: |
+            SmiteLoader-portable.zip
+            SmiteLoader-source.zip
+          retention-days: 14
+      - name: Publish v2.0.2
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create v2.0.2 SmiteLoader-portable.zip SmiteLoader-source.zip --repo 66lvl/smite-loader --title 'SMITE Loader v2.0.2' --notes 'Checks build prerequisites and shows missing components. It does not install Visual Studio. Source files download to LocalLow, and DLLs are stored next to the loader.'
+          if ($LASTEXITCODE -ne 0) { throw "Release failed: $LASTEXITCODE" }
