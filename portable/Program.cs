@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
@@ -43,7 +43,7 @@ namespace SmiteLoader
         string detectedGameExe;
         bool busy;
         bool setupComplete;
-        const string PackageUrl = "https://github.com/66lvl/smite-loader/releases/download/v2.0.0/SmiteLoader-source.zip";
+        const string PackageUrl = "https://github.com/66lvl/smite-loader/releases/download/v2.0.2/SmiteLoader-source.zip";
         const string PackageHash = "__PACKAGE_HASH__";
         int? updateModePid;
 
