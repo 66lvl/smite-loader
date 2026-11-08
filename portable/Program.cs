@@ -350,13 +350,25 @@ namespace SmiteLoader
         async Task StartSetupIfNeeded()
         {
             if (busy) return;
-            if (SetupFilesReady()) { setupComplete = true; SetBusy(false); RefreshState(); return; }
             setupComplete = false;
+            var missing = MissingBuildRequirements();
+            if (missing.Length > 0)
+            {
+                inject.Enabled = launchUpdateMode.Enabled = update.Enabled = finish.Enabled = false;
+                refresh.Enabled = true;
+                SetStatus("Не найдены компоненты сборки. Установите их и нажмите «Обновить статус».", true);
+                MessageBox.Show(this, "Для продолжения нужны следующие компоненты:\n\n" + missing +
+                    "\n\nУстановите их самостоятельно и нажмите «Обновить статус». " +
+                    "Лоадер не скачивает и не запускает установщик Visual Studio.",
+                    "Необходимые компоненты", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            if (SetupFilesReady()) { setupComplete = true; SetBusy(false); RefreshState(); return; }
             inject.Enabled = launchUpdateMode.Enabled = update.Enabled = finish.Enabled = false;
             var reply = MessageBox.Show(this,
                 "При первом запуске лоадер скачает исходный проект в LocalLow, " +
                 "скопирует Dumper-7.dll и соберёт DLL рядом с этим EXE. " +
-                "Если нужны компоненты сборки Microsoft, будет показан отдельный запрос.\n\nПродолжить?",
+                "Инструменты сборки уже проверены. Лоадер не устанавливает Visual Studio.\n\nПродолжить?",
                 "Первый запуск", MessageBoxButtons.YesNo, MessageBoxIcon.Information);
             if (reply != DialogResult.Yes) { SetStatus("Подготовка не выполнена. Нажмите «Обновить статус», чтобы повторить.", true); return; }
             SetBusy(true);
@@ -482,6 +494,67 @@ namespace SmiteLoader
                 }
             }
             catch { return null; }
+        }
+
+        string MissingBuildRequirements()
+        {
+            var msbuild = MsBuild();
+            bool compiler = false, v143 = false;
+            if (msbuild != null)
+            {
+                try
+                {
+                    var bin = Directory.GetParent(msbuild);
+                    var root = bin.Parent.Parent.Parent.FullName;
+                    var vc = Path.Combine(root, @"VC\Tools\MSVC");
+                    compiler = Directory.Exists(vc) && Directory.GetDirectories(vc).Any(dir => {
+                        Version version;
+                        return Version.TryParse(Path.GetFileName(dir), out version) &&
+                            version.Major == 14 && version.Minor >= 30 && version.Minor < 50 &&
+                            File.Exists(Path.Combine(dir, @"bin\Hostx64\x64\cl.exe"));
+                    });
+                    var targetBase = Path.Combine(root, @"MSBuild\Microsoft\VC");
+                    v143 = Directory.Exists(targetBase) && Directory.GetDirectories(targetBase, "v*").Any(dir =>
+                        Directory.Exists(Path.Combine(dir, @"Platforms\x64\PlatformToolsets\v143")));
+                }
+                catch { compiler = v143 = false; }
+            }
+            var powershell = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows),
+                @"System32\WindowsPowerShell\v1.0\powershell.exe");
+            return FormatRequirements(msbuild != null, compiler, v143, HasWindowsSdk(), File.Exists(powershell));
+        }
+
+        static string FormatRequirements(bool msbuild, bool compiler, bool v143, bool sdk, bool powershell)
+        {
+            var missing = new System.Collections.Generic.List<string>();
+            if (!msbuild)
+                missing.Add("• Visual Studio 2022 Build Tools или Visual Studio 2022 с MSBuild и инструментами C++ (MSVC v143, x64)");
+            else if (!compiler || !v143)
+                missing.Add("• Инструменты C++ MSVC v143 для x64 в установленном Visual Studio");
+            if (!sdk) missing.Add("• Windows 10 или Windows 11 SDK с библиотеками x64");
+            if (!powershell) missing.Add("• Windows PowerShell 5.1");
+            return string.Join("\n", missing);
+        }
+
+        static bool HasWindowsSdk()
+        {
+            try
+            {
+                using (var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows Kits\Installed Roots"))
+                {
+                    var root = key == null ? null : key.GetValue("KitsRoot10") as string;
+                    if (string.IsNullOrEmpty(root)) return false;
+                    var include = Path.Combine(root, "Include");
+                    if (!Directory.Exists(include)) return false;
+                    return Directory.GetDirectories(include, "10.*").Any(dir => {
+                        var v = Path.GetFileName(dir);
+                        return File.Exists(Path.Combine(dir, @"um\Windows.h")) &&
+                            File.Exists(Path.Combine(dir, @"shared\sdkddkver.h")) &&
+                            File.Exists(Path.Combine(root, @"Lib\" + v + @"\um\x64\kernel32.lib"));
+                    });
+                }
+            }
+            catch { return false; }
         }
 
         void RefreshState()
