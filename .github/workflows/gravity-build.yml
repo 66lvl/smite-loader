@@ -1,0 +1,86 @@
+name: Build gravity experiment
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply and compile test project
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          gh release download v2.0.2 --repo 66lvl/smite-loader --pattern SmiteLoader-source.zip --dir .
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot download source.' }
+          if ((Get-FileHash -Algorithm SHA256 SmiteLoader-source.zip).Hash -ne 'c998c0a09d0ee101e2eb42c8a695fed97a25ff6c8c59c1d9e4a7a8e3a0ec6645') { throw 'Unexpected source hash.' }
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          [IO.Compression.ZipFile]::ExtractToDirectory((Join-Path $pwd 'SmiteLoader-source.zip'), (Join-Path $pwd 'project'))
+          if ((Get-FileHash -Algorithm SHA256 project\features\world_environment.cpp).Hash -ne '67e16a8a5c896ed5be20412f4911601f7f95f055fbab8b53a2c0da331eaab508') { throw 'Unexpected world_environment baseline.' }
+          Copy-Item gravity\world_environment.cpp project\features\world_environment.cpp -Force
+          Copy-Item gravity\gravity_experiment.h project\features\gravity_experiment.h -Force
+          New-Item -ItemType Directory -Path buildout | Out-Null
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File project\tools\update_sdk_build.ps1 -ProjectRoot (Join-Path $pwd 'project') -OutputDir (Join-Path $pwd 'buildout')
+          if ($LASTEXITCODE -ne 0) { throw "Trainer build failed: $LASTEXITCODE" }
+          if (-not (Test-Path buildout\Smite_Internal_1641548.dll)) { throw 'Unexpected SDK build number.' }
+      - name: Prepare source patch
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Path patch | Out-Null
+          Copy-Item gravity\world_environment.cpp patch\world_environment.cpp
+          Copy-Item gravity\gravity_experiment.h patch\gravity_experiment.h
+          $script = @'
+          $ErrorActionPreference = 'Stop'
+          $project = Join-Path $env:USERPROFILE 'AppData\LocalLow\SmiteLoader\project'
+          $feature = Join-Path $project 'features'
+          $old = Join-Path $feature 'world_environment.cpp'
+          $newHeader = Join-Path $feature 'gravity_experiment.h'
+          $build = Join-Path $project 'tools\update_sdk_build.ps1'
+          if (-not (Test-Path (Join-Path $PSScriptRoot 'SmiteLoader.exe'))) { throw 'Extract the patch next to SmiteLoader.exe first.' }
+          if (-not (Test-Path $old) -or -not (Test-Path $build)) { throw 'Portable project not found in LocalLow. Run the loader setup first.' }
+          if ((Get-FileHash -Algorithm SHA256 $old).Hash -ne '67e16a8a5c896ed5be20412f4911601f7f95f055fbab8b53a2c0da331eaab508') { throw 'Source differs from the expected version. No files changed; manual merge required.' }
+          if (Test-Path $newHeader) { throw 'gravity_experiment.h already exists. No files changed.' }
+          foreach ($name in @('world_environment.cpp','gravity_experiment.h')) { if (-not (Test-Path (Join-Path $PSScriptRoot $name))) { throw "Missing patch file: $name" } }
+          $header = Get-Content -LiteralPath (Join-Path $project 'CppSDK\SDK.hpp') -Raw
+          $match = [regex]::Match($header,'(?m)^//\s*\d+\.\d+\.\d+-(\d+)\s*$')
+          if (-not $match.Success) { throw 'Could not determine SDK build number.' }
+          $backup = Join-Path $project ('backup-before-gravity-' + [guid]::NewGuid().ToString('N'))
+          New-Item -ItemType Directory -Path $backup | Out-Null
+          Copy-Item -LiteralPath $old -Destination $backup
+          $existing = Join-Path $PSScriptRoot ("Smite_Internal_{0}.dll" -f $match.Groups[1].Value)
+          if (Test-Path $existing) { Copy-Item -LiteralPath $existing -Destination $backup }
+          try {
+            Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'world_environment.cpp') -Destination $old -Force
+            Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'gravity_experiment.h') -Destination $newHeader
+            & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $build -ProjectRoot $project -OutputDir $PSScriptRoot
+            if ($LASTEXITCODE -ne 0) { throw "Trainer build failed: $LASTEXITCODE" }
+            Write-Host 'DONE. New trainer DLL is next to the loader. Backup:' $backup
+          } catch {
+            Copy-Item -LiteralPath (Join-Path $backup 'world_environment.cpp') -Destination $old -Force
+            Remove-Item -LiteralPath $newHeader -Force -ErrorAction SilentlyContinue
+            throw
+          }
+          '@
+          [IO.File]::WriteAllText((Join-Path $pwd 'patch\Apply-Gravity-Patch.ps1'),$script,(New-Object Text.UTF8Encoding($true)))
+          $cmd = "@echo off`r`npowershell.exe -NoProfile -ExecutionPolicy Bypass -File `"%~dp0Apply-Gravity-Patch.ps1`"`r`necho.`r`npause`r`n"
+          [IO.File]::WriteAllText((Join-Path $pwd 'patch\Apply-Gravity-Patch.cmd'),$cmd,[Text.Encoding]::ASCII)
+          $readme = 'Experimental patch. Extract ALL files next to SmiteLoader.exe, close the loader and game, then run Apply-Gravity-Patch.cmd. The script checks the source version, backs up the replaced source and DLL, and rebuilds locally. Inside the game: Radar > World > Experimental / Gravity. Off by default. Local field writes are not proof of server acceptance; only test in a permitted practice environment.'
+          [IO.File]::WriteAllText((Join-Path $pwd 'patch\README.txt'),$readme,(New-Object Text.UTF8Encoding($true)))
+          Compress-Archive -Path patch\* -DestinationPath Smite-Gravity-experiment.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gravity-experiment
+          path: Smite-Gravity-experiment.zip
+          retention-days: 14
+      - name: Publish test patch
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create v2.0.2-gravity-test Smite-Gravity-experiment.zip --repo 66lvl/smite-loader --prerelease --title 'Experimental gravity patch' --notes 'Experimental client-local gravity; build tested but not tested in game. Extract next to SmiteLoader.exe and run the patch script. Source version is checked and backups are saved. Server acceptance is not guaranteed.'
+          if ($LASTEXITCODE -ne 0) { throw "Release failed: $LASTEXITCODE" }
