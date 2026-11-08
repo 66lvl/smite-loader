@@ -1,0 +1,46 @@
+name: Validate gravity patch installation
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - name: Test patch on isolated project
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          gh release download v2.0.2 --repo 66lvl/smite-loader --pattern SmiteLoader-source.zip --dir .
+          if ($LASTEXITCODE -ne 0) { throw 'Source download failed.' }
+          gh release download v2.0.2-gravity-test --repo 66lvl/smite-loader --pattern Smite-Gravity-experiment.zip --dir .
+          if ($LASTEXITCODE -ne 0) { throw 'Patch download failed.' }
+          if ((Get-FileHash -Algorithm SHA256 Smite-Gravity-experiment.zip).Hash -ne '552e9edbd8416e3300cac0cb3c0602358e9d8af755b94a2d4da991bb74ea9089') { throw 'Patch hash mismatch.' }
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $env:USERPROFILE = Join-Path $env:RUNNER_TEMP 'gravity-test-profile'
+          $project = Join-Path $env:USERPROFILE 'AppData\LocalLow\SmiteLoader\project'
+          [IO.Directory]::CreateDirectory((Split-Path $project)) | Out-Null
+          [IO.Compression.ZipFile]::ExtractToDirectory((Join-Path $pwd 'SmiteLoader-source.zip'),$project)
+          $output = Join-Path $env:RUNNER_TEMP 'gravity-test-loader'
+          [IO.Compression.ZipFile]::ExtractToDirectory((Join-Path $pwd 'Smite-Gravity-experiment.zip'),$output)
+          [IO.File]::WriteAllText((Join-Path $output 'SmiteLoader.exe'),'placeholder')
+          [IO.File]::WriteAllText((Join-Path $output 'Smite_Internal_1641548.dll'),'old-dll')
+          $source = Join-Path $project 'features\world_environment.cpp'
+          $original = [IO.File]::ReadAllBytes($source)
+          [IO.File]::WriteAllText($source,'modified by user')
+          $ErrorActionPreference='Continue'
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $output 'Apply-Gravity-Patch.ps1') 2>$null
+          $result = $LASTEXITCODE
+          $ErrorActionPreference='Stop'
+          if ($result -eq 0 -or [IO.File]::ReadAllText($source) -ne 'modified by user' -or (Test-Path (Join-Path $project 'features\gravity_experiment.h'))) { throw 'Mismatch protection failed.' }
+          [IO.File]::WriteAllBytes($source,$original)
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $output 'Apply-Gravity-Patch.ps1')
+          if ($LASTEXITCODE -ne 0) { throw 'Patch installation failed.' }
+          $backup = Get-ChildItem -LiteralPath $project -Directory -Filter 'backup-before-gravity-*' | Select-Object -First 1
+          if (-not $backup -or [IO.File]::ReadAllText((Join-Path $backup.FullName 'Smite_Internal_1641548.dll')) -ne 'old-dll') { throw 'DLL backup missing.' }
+          if ((Get-Item (Join-Path $output 'Smite_Internal_1641548.dll')).Length -lt 100000) { throw 'New DLL missing.' }
+          if (-not (Test-Path (Join-Path $project 'features\gravity_experiment.h'))) { throw 'Header missing.' }
+          Write-Host 'Mismatch protection, backups, install and build passed. Game runtime not tested.'
